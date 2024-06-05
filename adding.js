@@ -21,7 +21,9 @@ db.Events.insertOne({
     "location": "Nest 2301",
     "club": "ubcyogaclub",
     "bio": "Come join UBC yoga for some fun yoga!",
-    "reference_link": "www.instagram.com"
+    "reference_link": "www.instagram.com",
+    "image_url": "https://instagram.fyvr1-1.fna.fbcdn.net/v/t51.2885-15/21984643_995308220608235_7854693412774084608_n.jpg?stp=dst-jpg_e35&_nc_ht=instagram.fyvr1-1.fna.fbcdn.net&_nc_cat=111&_nc_ohc=WZP0jekEo1IQ7kNvgEWWmwt&edm=AGenrX8BAAAA&ccb=7-5&oh=00_AYC8trUokSFDm0T2POPnrtAxbUjbg96rw_lFWWHoYqRNtg&oe=66491A2D&_nc_sid=ed990e"
+
   });
 
 // The prototype form to create a collection:

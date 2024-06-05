@@ -11,7 +11,8 @@ async function addEvent() {
         location: "Tech Hub 101",
         club: "Web Dev Club",
         bio: "An in-depth talk on modern web development practices.",
-        reference_link: "www.webdevclub.com"
+        reference_link: "www.webdevclub.com",
+        image_url: "https://instagram.fyvr1-1.fna.fbcdn.net/v/t51.2885-15/21984643_995308220608235_7854693412774084608_n.jpg?stp=dst-jpg_e35&_nc_ht=instagram.fyvr1-1.fna.fbcdn.net&_nc_cat=111&_nc_ohc=WZP0jekEo1IQ7kNvgEWWmwt&edm=AGenrX8BAAAA&ccb=7-5&oh=00_AYC8trUokSFDm0T2POPnrtAxbUjbg96rw_lFWWHoYqRNtg&oe=66491A2D&_nc_sid=ed990e"
     };
 
     try {
