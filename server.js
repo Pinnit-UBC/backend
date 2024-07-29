@@ -99,6 +99,25 @@ function getEventModel(eventDate) {
   return mongoose.models[modelName] || mongoose.model(modelName, eventSchema, modelName);
 }
 
+// Define the SponsoredEvent model
+const sponsoredEventSchema = new mongoose.Schema({
+  event_date: String,
+  event_title: String,
+  host_organization: String,
+  start_time: String,
+  end_time: { type: String, default: null },
+  location: String,
+  activity_description: String,
+  registration_status: String,
+  reference_link: String,
+  image_url: String,
+  latitude: Number,
+  longitude: Number,
+  Address: String,
+});
+
+const SponsoredEvent = mongoose.model('SponsoredEvent', sponsoredEventSchema, 'sponsored_event'); // Explicitly use the collection name
+
 // Define the keys schema and model
 const KeySchema = new mongoose.Schema({}, { strict: false });
 const Key = mongoose.model('Key', KeySchema);
@@ -192,11 +211,35 @@ app.get('/events', async (req, res) => {
   }
 });
 
+// Route to get sponsored events for a specific date or the current date by default
+app.get('/sponsored_event', async (req, res) => {
+  const date = req.query.date || dayjs().format('YYYY-MM-DD');
+
+  try {
+    console.log(`Received request for sponsored event on date: ${date}`);
+    const sponsoredEvent = await SponsoredEvent.findOne({ event_date: date });
+
+    if (sponsoredEvent) {
+      console.log(`Found sponsored event: ${JSON.stringify(sponsoredEvent)}`);
+      if (sponsoredEvent.image_url) {
+        sponsoredEvent.image_url = getPreSignedUrl(path.basename(sponsoredEvent.image_url));
+      }
+    } else {
+      console.log(`No sponsored event found for this date.`);
+    }
+
+    res.json(sponsoredEvent);
+  } catch (err) {
+    console.error(`Error fetching sponsored event for ${date}:`, err);
+    res.status(500).json({ message: 'Error fetching sponsored event', error: err.message });
+  }
+});
+
 // Route to handle subscription
 app.post('/subscribe', async (req, res) => {
   const { name, email } = req.body;
-  const listId = 'f9a143c6fd'; // Replace with your Mailchimp list ID
-  const apiKey = '8796a01c85f3e5af0748d3757edbca24-us13';
+  const listId = 'db921483ac'; // Replace with your Mailchimp list ID
+  const apiKey = 'de8b05dbb0058b6d83e41325add7cf3e-us22';
   const serverPrefix = apiKey.split('-')[1];
 
   const url = `https://${serverPrefix}.api.mailchimp.com/3.0/lists/${listId}/members`;
@@ -215,17 +258,18 @@ app.post('/subscribe', async (req, res) => {
       {
         headers: {
           Authorization: `apikey ${apiKey}`,
+          'Content-Type': 'application/json',
         },
       }
     );
 
-    if (response.status === 200) {
+    if (response.status === 200 || response.status === 201) {
       res.status(200).json({ message: 'Subscribed successfully!' });
     } else {
       res.status(response.status).json({ message: 'Failed to subscribe.' });
     }
   } catch (error) {
-    console.error('Error subscribing:', error);
+    console.error('Error subscribing:', error.response ? error.response.data : error.message);
     res.status(500).json({ message: 'Internal Server Error' });
   }
 });
