@@ -18,7 +18,7 @@ console.log('MONGO_URI:', process.env.MONGO_URI);
 const mongoURI = process.env.MONGO_URI;
 
 // Connect to MongoDB
-mongoose.connect(mongoURI);
+mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true });
 const db = mongoose.connection;
 db.on('error', console.error.bind(console, 'connection error:'));
 db.once('open', () => {
@@ -33,7 +33,7 @@ app.use(cors());
 const s3 = new AWS.S3({
   accessKeyId: process.env.AWS_ACCESS_KEY_ID,
   secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  region: process.env.AWS_REGION
+  region: process.env.AWS_REGION,
 });
 
 // Set up multer for file uploads
@@ -43,7 +43,7 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     cb(null, Date.now() + path.extname(file.originalname)); // Appends the file extension
-  }
+  },
 });
 
 const upload = multer({ storage });
@@ -56,7 +56,7 @@ const uploadFileToS3 = async (filePath, fileName) => {
     Bucket: process.env.S3_BUCKET_NAME,
     Key: fileName,
     Body: fileContent,
-    ContentType: 'image/png' // adjust this according to the file type
+    ContentType: 'image/png', // adjust this according to the file type
   };
 
   const uploadResult = await s3.upload(params).promise();
@@ -68,36 +68,37 @@ const getPreSignedUrl = (key) => {
   const params = {
     Bucket: process.env.S3_BUCKET_NAME,
     Key: key,
-    Expires: 60 * 60 // URL expires in 1 hour
+    Expires: 60 * 60, // URL expires in 1 hour
   };
 
   return s3.getSignedUrl('getObject', params);
 };
 
-// Function to create a model dynamically or return existing model
-function getEventModel(eventDate) {
-  const eventSchema = new mongoose.Schema({
-    event_date: String,
-    event_title: String,
-    host_organization: String,
-    start_time: String,
-    end_time: { type: String, default: null },
-    location: String,
-    activity_description: String,
-    registration_status: String,
-    reference_link: String,
-    image_url: String, // Ensure this field is included in the schema
-    latitude: Number,
-    longitude: Number,
-    Address: String,
-  });
+// Event schema
+const eventSchema = new mongoose.Schema({
+  event_date: String, // Format: 'YYYY-MM-DD'
+  event_title: String,
+  host_organization: String,
+  start_time: String,
+  end_time: { type: String, default: null },
+  location: String,
+  activity_description: String,
+  registration_status: String,
+  reference_link: String,
+  image_url: String, // Ensure this field is included in the schema
+  latitude: Number,
+  longitude: Number,
+  Address: String,
+});
 
-  // Add an index on the start_time field for efficient sorting
-  eventSchema.index({ start_time: 1 });
+// Add an index on the event_date and start_time fields for efficient querying and sorting
+eventSchema.index({ event_date: 1, start_time: 1 });
 
-  const modelName = `Event_${eventDate.replace(/-/g, '_')}`;
-  return mongoose.models[modelName] || mongoose.model(modelName, eventSchema, modelName);
-}
+// Function to get the dynamic event model based on the date
+const getEventModel = (date) => {
+  const collectionName = `Event_${date.replace(/-/g, '_')}`;
+  return mongoose.model(collectionName, eventSchema, collectionName);
+};
 
 // Define the SponsoredEvent model
 const sponsoredEventSchema = new mongoose.Schema({
@@ -122,6 +123,38 @@ const SponsoredEvent = mongoose.model('SponsoredEvent', sponsoredEventSchema, 's
 const KeySchema = new mongoose.Schema({}, { strict: false });
 const Key = mongoose.model('Key', KeySchema);
 
+// Define the News schema and model
+const newsSchema = new mongoose.Schema({
+  title: String,
+  content: String,
+  date: String, // Field to store the date as a string in "YYYY-MM-DD" format
+  created_at: { type: Date, default: Date.now }
+});
+
+const News = mongoose.model('News', newsSchema, 'news');
+
+// Route to add news
+app.post('/add-news', upload.single('image'), async (req, res) => {
+  try {
+    // Destructure date, title, and content from req.body
+    const { date, title, content } = req.body;
+
+    // Create a new News document
+    const newNews = new News({
+      title,
+      content,
+      date, // Ensure the date is correctly set
+    });
+
+    // Save the news to the database
+    await newNews.save();
+    res.status(201).json(newNews);
+  } catch (error) {
+    console.error('Error adding news:', error);
+    res.status(500).json({ error: 'Error adding news' });
+  }
+});
+
 // Route to verify the pass key
 app.post('/verify-key', async (req, res) => {
   const { user_id, pass_key } = req.body;
@@ -142,61 +175,51 @@ app.post('/verify-key', async (req, res) => {
 // Route to add an event
 app.post('/add-event', upload.single('image'), async (req, res) => {
   try {
-    console.log('Request body:', req.body); // Log the request body
+    console.log('Request body:', req.body);
 
     const { event_date, host_organization, latitude, longitude } = req.body;
-    const imageFilePath = req.file.path;
-    const imageName = req.file.filename;
+    let image_url = '';
 
-    const s3UploadResult = await uploadFileToS3(imageFilePath, imageName);
-    const image_url = s3UploadResult; // URL of the uploaded image in S3
+    if (req.file) {
+      const s3UploadResult = await uploadFileToS3(req.file.path, req.file.filename);
+      image_url = s3UploadResult;
+      fs.unlinkSync(req.file.path); // Remove local file
+    }
 
-    console.log('Event Date:', event_date);
-    console.log('Host/Organization:', host_organization);
-    console.log('Image URL:', image_url); // Log the image URL
-    console.log('Latitude:', latitude);
-    console.log('Longitude:', longitude);
+    // Get the model for the event collection dynamically
+    const EventModel = getEventModel(event_date);
 
-    const Event = getEventModel(event_date);
-
-    const newEvent = new Event({
+    const newEvent = new EventModel({
       ...req.body,
       image_url,
       latitude: parseFloat(latitude),
       longitude: parseFloat(longitude),
     });
 
-    const savedEvent = await newEvent.save();
-    console.log('Event saved:', savedEvent);
-
-    // Delete the file from the local server after uploading to S3
-    fs.unlink(imageFilePath, (err) => {
-      if (err) {
-        console.error('Failed to delete local file:', err);
-      } else {
-        console.log('Local file deleted successfully');
-      }
-    });
-
-    res.status(201).json(savedEvent);
+    await newEvent.save();
+    console.log('Event saved:', newEvent);
+    res.status(201).json(newEvent);
   } catch (err) {
     console.error('Error adding event:', err);
-    res.status(400).json({ message: 'Error adding event', error: err.message });
+    res.status(500).json({ message: 'Error adding event', error: err.message });
   }
 });
 
 // Route to get events for a specific date or the current date by default
 app.get('/events', async (req, res) => {
   const date = req.query.date || dayjs().format('YYYY-MM-DD');
-  const eventDate = date.replace(/-/g, '_');
 
   try {
     console.log(`Fetching events for date: ${date}`);
-    const Event = getEventModel(date);
-    const events = await Event.find().sort({ start_time: 1 });
+
+    // Dynamically set the collection name based on the date
+    const EventModel = getEventModel(date);
+
+    // Fetch events from the dynamically determined collection
+    const events = await EventModel.find({}).sort({ start_time: 1 });
 
     // Add pre-signed URLs to the events
-    const eventsWithUrls = events.map(event => {
+    const eventsWithUrls = events.map((event) => {
       if (event.image_url) {
         event.image_url = getPreSignedUrl(path.basename(event.image_url));
       }
@@ -290,6 +313,19 @@ app.get('/proxy-image', async (req, res) => {
     res.status(500).send('Error fetching image');
   }
 });
+
+
+// Route to get news
+app.get('/news', async (req, res) => {
+  try {
+    const newsItems = await News.find().sort({ created_at: -1 }); // Sort by most recent
+    res.json(newsItems);
+  } catch (error) {
+    console.error('Error fetching news:', error);
+    res.status(500).json({ error: 'Error fetching news' });
+  }
+});
+
 
 // Serve static files from the uploads directory
 app.use('/uploads', express.static('uploads'));
