@@ -29,12 +29,14 @@ db.once('open', () => {
 app.use(express.json());
 app.use(cors());
 
-// AWS S3 configuration
+// AWS S3 and CloudFront configuration
 const s3 = new AWS.S3({
   accessKeyId: process.env.AWS_ACCESS_KEY_ID,
   secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   region: process.env.AWS_REGION,
 });
+
+const cloudFrontDomain = process.env.CLOUDFRONT_DOMAIN_NAME;
 
 // Set up multer for file uploads
 const storage = multer.diskStorage({
@@ -60,18 +62,16 @@ const uploadFileToS3 = async (filePath, fileName) => {
   };
 
   const uploadResult = await s3.upload(params).promise();
-  return uploadResult.Location; // Make sure this is the correct URL
+  
+  // Generate CloudFront URL instead of S3 URL
+  const cloudFrontUrl = `https://${cloudFrontDomain}/${fileName}`;
+  
+  return cloudFrontUrl;
 };
 
-// Function to generate a pre-signed URL
-const getPreSignedUrl = (key) => {
-  const params = {
-    Bucket: process.env.S3_BUCKET_NAME,
-    Key: key,
-    Expires: 60 * 60, // URL expires in 1 hour
-  };
-
-  return s3.getSignedUrl('getObject', params);
+// Function to generate a CloudFront URL
+const getCloudFrontUrl = (key) => {
+  return `https://${cloudFrontDomain}/${key}`;
 };
 
 // Event schema
@@ -181,8 +181,8 @@ app.post('/add-event', upload.single('image'), async (req, res) => {
     let image_url = '';
 
     if (req.file) {
-      const s3UploadResult = await uploadFileToS3(req.file.path, req.file.filename);
-      image_url = s3UploadResult;
+      const cloudFrontUrl = await uploadFileToS3(req.file.path, req.file.filename);
+      image_url = cloudFrontUrl;
       fs.unlinkSync(req.file.path); // Remove local file
     }
 
@@ -218,16 +218,8 @@ app.get('/events', async (req, res) => {
     // Fetch events from the dynamically determined collection
     const events = await EventModel.find({}).sort({ start_time: 1 });
 
-    // Add pre-signed URLs to the events
-    const eventsWithUrls = events.map((event) => {
-      if (event.image_url) {
-        event.image_url = getPreSignedUrl(path.basename(event.image_url));
-      }
-      return event;
-    });
-
-    console.log(`Fetched events for ${date}:`, eventsWithUrls);
-    res.json(eventsWithUrls);
+    console.log(`Fetched events for ${date}:`, events);
+    res.json(events);
   } catch (err) {
     console.error(`Error fetching events for ${date}:`, err);
     res.status(500).json({ message: 'Error fetching events', error: err.message });
@@ -245,7 +237,7 @@ app.get('/sponsored_event', async (req, res) => {
     if (sponsoredEvent) {
       console.log(`Found sponsored event: ${JSON.stringify(sponsoredEvent)}`);
       if (sponsoredEvent.image_url) {
-        sponsoredEvent.image_url = getPreSignedUrl(path.basename(sponsoredEvent.image_url));
+        sponsoredEvent.image_url = getCloudFrontUrl(path.basename(sponsoredEvent.image_url));
       }
     } else {
       console.log(`No sponsored event found for this date.`);
@@ -314,7 +306,6 @@ app.get('/proxy-image', async (req, res) => {
   }
 });
 
-
 // Route to get news
 app.get('/news', async (req, res) => {
   try {
@@ -325,7 +316,6 @@ app.get('/news', async (req, res) => {
     res.status(500).json({ error: 'Error fetching news' });
   }
 });
-
 
 // Serve static files from the uploads directory
 app.use('/uploads', express.static('uploads'));
