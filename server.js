@@ -53,21 +53,19 @@ const upload = multer({ storage });
 // Function to upload file to S3
 const uploadFileToS3 = async (filePath, fileName) => {
   const fileContent = fs.readFileSync(filePath);
-
   const params = {
     Bucket: process.env.S3_BUCKET_NAME,
     Key: fileName,
     Body: fileContent,
     ContentType: 'image/png', // adjust this according to the file type
   };
+  await s3.upload(params).promise();
 
-  const uploadResult = await s3.upload(params).promise();
-  
-  // Generate CloudFront URL instead of S3 URL
+  // Generate CloudFront URL
   const cloudFrontUrl = `https://${cloudFrontDomain}/${fileName}`;
-  
   return cloudFrontUrl;
 };
+
 
 // Function to generate a CloudFront URL
 const getCloudFrontUrl = (key) => {
