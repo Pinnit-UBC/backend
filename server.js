@@ -11,8 +11,12 @@ const app = express();
 const PORT = 3001;
 require('dotenv').config();
 
+
+
 console.log('GOOGLE_MAPS_API_KEY:', process.env.GOOGLE_MAPS_API_KEY);
 console.log('MONGO_URI:', process.env.MONGO_URI);
+console.log('CLOUDFRONT_DOMAIN_NAME:', process.env.CLOUDFRONT_DOMAIN_NAME); // Add this line to debug
+
 
 // MongoDB connection URL
 const mongoURI = process.env.MONGO_URI;
@@ -37,6 +41,7 @@ const s3 = new AWS.S3({
 });
 
 const cloudFrontDomain = process.env.CLOUDFRONT_DOMAIN_NAME;
+console.log('CloudFront Domain:', cloudFrontDomain); // Debugging statement
 
 // Set up multer for file uploads
 const storage = multer.diskStorage({
@@ -63,6 +68,7 @@ const uploadFileToS3 = async (filePath, fileName) => {
 
   // Generate CloudFront URL
   const cloudFrontUrl = `https://${cloudFrontDomain}/${fileName}`;
+  console.log('Generated CloudFront URL:', cloudFrontUrl); // Debugging statement
   return cloudFrontUrl;
 };
 
