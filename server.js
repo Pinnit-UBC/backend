@@ -328,3 +328,22 @@ app.use('/uploads', express.static('uploads'));
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
+
+
+const clubsOrganizationsSchema = new mongoose.Schema({
+  name: String, // Name of the club/organization
+  image: String, // Image URL
+});
+
+const ClubOrganization = mongoose.model('ClubOrganization', clubsOrganizationsSchema, 'clubs-organizations');
+
+// Route to get all clubs and organizations
+app.get('/clubs-organizations', async (req, res) => {
+  try {
+    const clubsOrganizations = await ClubOrganization.find().sort({ name: 1 }); // Sort by name
+    res.json(clubsOrganizations);
+  } catch (error) {
+    console.error('Error fetching clubs/organizations:', error);
+    res.status(500).json({ error: 'Error fetching clubs/organizations' });
+  }
+});
