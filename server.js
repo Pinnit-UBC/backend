@@ -196,8 +196,8 @@ app.post('/add-event', upload.single('image'), async (req, res) => {
     const newEvent = new EventModel({
       ...req.body,
       image_url,
-      latitude: parseFloat(latitude),
-      longitude: parseFloat(longitude),
+      latitude: latitude ? parseFloat(latitude) : null,
+      longitude: longitude ? parseFloat(longitude) : null,
     });
 
     await newEvent.save();
@@ -208,6 +208,7 @@ app.post('/add-event', upload.single('image'), async (req, res) => {
     res.status(500).json({ message: 'Error adding event', error: err.message });
   }
 });
+
 
 // Route to get events for a specific date or the current date by default
 app.get('/events', async (req, res) => {
