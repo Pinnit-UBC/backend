@@ -11,12 +11,9 @@ const app = express();
 const PORT = 3001;
 require('dotenv').config();
 
-
-
 console.log('GOOGLE_MAPS_API_KEY:', process.env.GOOGLE_MAPS_API_KEY);
 console.log('MONGO_URI:', process.env.MONGO_URI);
-console.log('CLOUDFRONT_DOMAIN_NAME:', process.env.CLOUDFRONT_DOMAIN_NAME); // Add this line to debug
-
+console.log('CLOUDFRONT_DOMAIN_NAME:', process.env.CLOUDFRONT_DOMAIN_NAME);
 
 // MongoDB connection URL
 const mongoURI = process.env.MONGO_URI;
@@ -41,7 +38,7 @@ const s3 = new AWS.S3({
 });
 
 const cloudFrontDomain = process.env.CLOUDFRONT_DOMAIN_NAME;
-console.log('CloudFront Domain:', cloudFrontDomain); // Debugging statement
+console.log('CloudFront Domain:', cloudFrontDomain);
 
 // Set up multer for file uploads
 const storage = multer.diskStorage({
@@ -49,7 +46,7 @@ const storage = multer.diskStorage({
     cb(null, 'uploads/');
   },
   filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname)); // Appends the file extension
+    cb(null, Date.now() + path.extname(file.originalname));
   },
 });
 
@@ -62,16 +59,15 @@ const uploadFileToS3 = async (filePath, fileName) => {
     Bucket: process.env.S3_BUCKET_NAME,
     Key: fileName,
     Body: fileContent,
-    ContentType: 'image/png', // adjust this according to the file type
+    ContentType: 'image/png',
   };
   await s3.upload(params).promise();
 
   // Generate CloudFront URL
   const cloudFrontUrl = `https://${cloudFrontDomain}/${fileName}`;
-  console.log('Generated CloudFront URL:', cloudFrontUrl); // Debugging statement
+  console.log('Generated CloudFront URL:', cloudFrontUrl);
   return cloudFrontUrl;
 };
-
 
 // Function to generate a CloudFront URL
 const getCloudFrontUrl = (key) => {
@@ -89,7 +85,7 @@ const eventSchema = new mongoose.Schema({
   activity_description: String,
   registration_status: String,
   reference_link: String,
-  image_url: String, // Ensure this field is included in the schema
+  image_url: String,
   latitude: Number,
   longitude: Number,
   Address: String,
@@ -121,7 +117,7 @@ const sponsoredEventSchema = new mongoose.Schema({
   Address: String,
 });
 
-const SponsoredEvent = mongoose.model('SponsoredEvent', sponsoredEventSchema, 'sponsored_event'); // Explicitly use the collection name
+const SponsoredEvent = mongoose.model('SponsoredEvent', sponsoredEventSchema, 'sponsored_event');
 
 // Define the keys schema and model
 const KeySchema = new mongoose.Schema({}, { strict: false });
@@ -140,17 +136,14 @@ const News = mongoose.model('News', newsSchema, 'news');
 // Route to add news
 app.post('/add-news', upload.single('image'), async (req, res) => {
   try {
-    // Destructure date, title, and content from req.body
     const { date, title, content } = req.body;
 
-    // Create a new News document
     const newNews = new News({
       title,
       content,
-      date, // Ensure the date is correctly set
+      date,
     });
 
-    // Save the news to the database
     await newNews.save();
     res.status(201).json(newNews);
   } catch (error) {
@@ -181,24 +174,33 @@ app.post('/add-event', upload.single('image'), async (req, res) => {
   try {
     console.log('Request body:', req.body);
 
-    const { event_date, host_organization, latitude, longitude } = req.body;
+    const { event_date, latitude, longitude } = req.body;
     let image_url = '';
 
     if (req.file) {
       const cloudFrontUrl = await uploadFileToS3(req.file.path, req.file.filename);
       image_url = cloudFrontUrl;
-      fs.unlinkSync(req.file.path); // Remove local file
+      fs.unlinkSync(req.file.path);
     }
 
     // Get the model for the event collection dynamically
     const EventModel = getEventModel(event_date);
 
-    const newEvent = new EventModel({
+    // Prepare the event data
+    const newEventData = {
       ...req.body,
       image_url,
-      latitude: latitude ? parseFloat(latitude) : null,
-      longitude: longitude ? parseFloat(longitude) : null,
-    });
+    };
+
+    // Only include latitude and longitude if they are valid numbers
+    if (latitude && latitude !== 'null') {
+      newEventData.latitude = parseFloat(latitude);
+    }
+    if (longitude && longitude !== 'null') {
+      newEventData.longitude = parseFloat(longitude);
+    }
+
+    const newEvent = new EventModel(newEventData);
 
     await newEvent.save();
     console.log('Event saved:', newEvent);
@@ -209,7 +211,6 @@ app.post('/add-event', upload.single('image'), async (req, res) => {
   }
 });
 
-
 // Route to get events for a specific date or the current date by default
 app.get('/events', async (req, res) => {
   const date = req.query.date || dayjs().format('YYYY-MM-DD');
@@ -217,10 +218,8 @@ app.get('/events', async (req, res) => {
   try {
     console.log(`Fetching events for date: ${date}`);
 
-    // Dynamically set the collection name based on the date
     const EventModel = getEventModel(date);
 
-    // Fetch events from the dynamically determined collection
     const events = await EventModel.find({}).sort({ start_time: 1 });
 
     console.log(`Fetched events for ${date}:`, events);
@@ -258,7 +257,7 @@ app.get('/sponsored_event', async (req, res) => {
 // Route to handle subscription
 app.post('/subscribe', async (req, res) => {
   const { name, email } = req.body;
-  const listId = 'db921483ac'; // Replace with your Mailchimp list ID
+  const listId = 'db921483ac';
   const apiKey = 'de8b05dbb0058b6d83e41325add7cf3e-us22';
   const serverPrefix = apiKey.split('-')[1];
 
@@ -314,7 +313,7 @@ app.get('/proxy-image', async (req, res) => {
 // Route to get news
 app.get('/news', async (req, res) => {
   try {
-    const newsItems = await News.find().sort({ created_at: -1 }); // Sort by most recent
+    const newsItems = await News.find().sort({ created_at: -1 });
     res.json(newsItems);
   } catch (error) {
     console.error('Error fetching news:', error);
@@ -330,7 +329,6 @@ app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
 
-
 const clubsOrganizationsSchema = new mongoose.Schema({
   name: String, // Name of the club/organization
   image: String, // Image URL
@@ -341,7 +339,7 @@ const ClubOrganization = mongoose.model('ClubOrganization', clubsOrganizationsSc
 // Route to get all clubs and organizations
 app.get('/clubs-organizations', async (req, res) => {
   try {
-    const clubsOrganizations = await ClubOrganization.find().sort({ name: 1 }); // Sort by name
+    const clubsOrganizations = await ClubOrganization.find().sort({ name: 1 });
     res.json(clubsOrganizations);
   } catch (error) {
     console.error('Error fetching clubs/organizations:', error);
