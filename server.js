@@ -46,7 +46,7 @@ const storage = multer.diskStorage({
     cb(null, 'uploads/');
   },
   filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname));
+    cb(null, Date.now() + path.extname(file.originalname)); // Appends the file extension
   },
 });
 
@@ -59,7 +59,7 @@ const uploadFileToS3 = async (filePath, fileName) => {
     Bucket: process.env.S3_BUCKET_NAME,
     Key: fileName,
     Body: fileContent,
-    ContentType: 'image/png',
+    ContentType: 'image/png', // adjust this according to the file type
   };
   await s3.upload(params).promise();
 
@@ -85,7 +85,7 @@ const eventSchema = new mongoose.Schema({
   activity_description: String,
   registration_status: String,
   reference_link: String,
-  image_url: String,
+  image_url: String, // Ensure this field is included in the schema
   latitude: Number,
   longitude: Number,
   Address: String,
@@ -180,27 +180,18 @@ app.post('/add-event', upload.single('image'), async (req, res) => {
     if (req.file) {
       const cloudFrontUrl = await uploadFileToS3(req.file.path, req.file.filename);
       image_url = cloudFrontUrl;
-      fs.unlinkSync(req.file.path);
+      fs.unlinkSync(req.file.path); // Remove local file
     }
 
     // Get the model for the event collection dynamically
     const EventModel = getEventModel(event_date);
 
-    // Prepare the event data
-    const newEventData = {
+    const newEvent = new EventModel({
       ...req.body,
       image_url,
-    };
-
-    // Only include latitude and longitude if they are valid numbers
-    if (latitude && latitude !== 'null') {
-      newEventData.latitude = parseFloat(latitude);
-    }
-    if (longitude && longitude !== 'null') {
-      newEventData.longitude = parseFloat(longitude);
-    }
-
-    const newEvent = new EventModel(newEventData);
+      latitude: latitude && latitude !== "null" ? parseFloat(latitude) : null,
+      longitude: longitude && longitude !== "null" ? parseFloat(longitude) : null,
+    });
 
     await newEvent.save();
     console.log('Event saved:', newEvent);
@@ -257,7 +248,7 @@ app.get('/sponsored_event', async (req, res) => {
 // Route to handle subscription
 app.post('/subscribe', async (req, res) => {
   const { name, email } = req.body;
-  const listId = 'db921483ac';
+  const listId = 'db921483ac'; // Replace with your Mailchimp list ID
   const apiKey = 'de8b05dbb0058b6d83e41325add7cf3e-us22';
   const serverPrefix = apiKey.split('-')[1];
 
@@ -313,7 +304,7 @@ app.get('/proxy-image', async (req, res) => {
 // Route to get news
 app.get('/news', async (req, res) => {
   try {
-    const newsItems = await News.find().sort({ created_at: -1 });
+    const newsItems = await News.find().sort({ created_at: -1 }); // Sort by most recent
     res.json(newsItems);
   } catch (error) {
     console.error('Error fetching news:', error);
@@ -329,6 +320,7 @@ app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
 
+// Clubs and Organizations Schema and Routes
 const clubsOrganizationsSchema = new mongoose.Schema({
   name: String, // Name of the club/organization
   image: String, // Image URL
@@ -339,7 +331,7 @@ const ClubOrganization = mongoose.model('ClubOrganization', clubsOrganizationsSc
 // Route to get all clubs and organizations
 app.get('/clubs-organizations', async (req, res) => {
   try {
-    const clubsOrganizations = await ClubOrganization.find().sort({ name: 1 });
+    const clubsOrganizations = await ClubOrganization.find().sort({ name: 1 }); // Sort by name
     res.json(clubsOrganizations);
   } catch (error) {
     console.error('Error fetching clubs/organizations:', error);
