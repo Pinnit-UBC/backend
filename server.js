@@ -90,6 +90,8 @@ const eventSchema = new mongoose.Schema({
   longitude: Number,
   Address: String,
   tags: [String], // Add tags array field
+  faculty: [String], // Add faculty array field
+  degree_level: [String] // Add degree level array field
 });
 
 // Add an index on the event_date and start_time fields for efficient querying and sorting
@@ -175,7 +177,7 @@ app.post('/add-event', upload.single('image'), async (req, res) => {
   try {
     console.log('Request body:', req.body);
 
-    const { event_date, latitude, longitude, tags } = req.body;
+    const { event_date, latitude, longitude, tags, faculty, degree_level } = req.body;
     let image_url = '';
 
     if (req.file) {
@@ -191,6 +193,8 @@ app.post('/add-event', upload.single('image'), async (req, res) => {
       ...req.body,
       image_url,
       tags: JSON.parse(tags), // Parse tags back to array
+      faculty: JSON.parse(faculty), // Parse faculty back to array
+      degree_level: JSON.parse(degree_level), // Parse degree level back to array
       latitude: latitude && latitude !== "null" ? parseFloat(latitude) : null,
       longitude: longitude && longitude !== "null" ? parseFloat(longitude) : null,
     });
