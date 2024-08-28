@@ -344,3 +344,21 @@ app.get('/clubs-organizations', async (req, res) => {
     res.status(500).json({ error: 'Error fetching clubs/organizations' });
   }
 });
+
+// Route to get popular events based on the sponsored events for a specific date
+app.get('/popular_events', async (req, res) => {
+  const date = req.query.date || dayjs().format('YYYY-MM-DD');
+
+  try {
+      const sponsoredEvents = await SponsoredEvent.find({ event_date: date }).exec();
+      const eventTitles = sponsoredEvents.map(event => event.event_title);
+      
+      const EventModel = getEventModel(date);
+      const popularEvents = await EventModel.find({ event_title: { $in: eventTitles } }).exec();
+
+      res.json(popularEvents);
+  } catch (err) {
+      console.error('Error fetching popular events:', err);
+      res.status(500).json({ message: 'Error fetching popular events', error: err.message });
+  }
+});
