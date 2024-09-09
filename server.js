@@ -364,12 +364,16 @@ app.get('/popular_events', async (req, res) => {
 });
 
 
-// Route to get all clubs and organizations or filter by faculty
+// Updated route to get all clubs and organizations or filter by faculty from the correct collection
 app.get('/clubs-organizations', async (req, res) => {
   try {
     const faculty = req.query.faculty;
     const query = faculty && faculty !== 'All' ? { faculty } : {};
-    const clubsOrganizations = await ClubOrganization.find(query).sort({ name: 1 }); // Sort by name
+    
+    // Make sure we query the correct collection 'Faculty&Academic'
+    const ClubOrganization = mongoose.model('ClubOrganization', new mongoose.Schema({}, { strict: false }), 'Faculty&Academic');
+
+    const clubsOrganizations = await ClubOrganization.find(query).sort({ title: 1 }); // Sort by title
     res.json(clubsOrganizations);
   } catch (error) {
     console.error('Error fetching clubs/organizations:', error);
