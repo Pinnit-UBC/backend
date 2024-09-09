@@ -362,3 +362,17 @@ app.get('/popular_events', async (req, res) => {
       res.status(500).json({ message: 'Error fetching popular events', error: err.message });
   }
 });
+
+
+// Route to get all clubs and organizations or filter by faculty
+app.get('/clubs-organizations', async (req, res) => {
+  try {
+    const faculty = req.query.faculty;
+    const query = faculty && faculty !== 'All' ? { faculty } : {};
+    const clubsOrganizations = await ClubOrganization.find(query).sort({ name: 1 }); // Sort by name
+    res.json(clubsOrganizations);
+  } catch (error) {
+    console.error('Error fetching clubs/organizations:', error);
+    res.status(500).json({ error: 'Error fetching clubs/organizations' });
+  }
+});
