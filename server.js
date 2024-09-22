@@ -7,6 +7,8 @@ const AWS = require('aws-sdk');
 const fs = require('fs');
 const dayjs = require('dayjs');
 const axios = require('axios');
+const crypto = require('crypto'); // For generating unique file names
+const { ObjectId } = mongoose.Types;
 const app = express();
 const PORT = 3001;
 require('dotenv').config();
@@ -59,7 +61,7 @@ const uploadFileToS3 = async (filePath, fileName) => {
     Bucket: process.env.S3_BUCKET_NAME,
     Key: fileName,
     Body: fileContent,
-    ContentType: 'image/png', // adjust this according to the file type
+    ContentType: 'image/jpeg', // Adjust this according to the file type
   };
   await s3.upload(params).promise();
 
@@ -69,9 +71,41 @@ const uploadFileToS3 = async (filePath, fileName) => {
   return cloudFrontUrl;
 };
 
-// Function to generate a CloudFront URL
-const getCloudFrontUrl = (key) => {
-  return `https://${cloudFrontDomain}/${key}`;
+// Check if an image already exists in S3
+const checkIfImageExistsInS3 = async (fileName) => {
+  const params = {
+    Bucket: process.env.S3_BUCKET_NAME,
+    Key: fileName,
+  };
+
+  try {
+    console.log(`Checking S3 for file: ${fileName}, Bucket: ${params.Bucket}`); // Log bucket and file name
+    await s3.headObject(params).promise();
+    console.log(`File exists in S3: ${fileName}`);
+    return true; // Image exists in S3
+  } catch (error) {
+    if (error.code === 'NotFound') {
+      console.log(`File not found in S3: ${fileName}`);
+      return false; // Image doesn't exist in S3
+    } else {
+      console.error(`Error checking image in S3: ${error.code || 'Unknown error'} - ${error.message || 'No message available'}`);
+      throw new Error(`S3 Error: ${error.message || 'No message available'}`);
+    }
+  }
+};
+
+// Function to download images and save locally
+const downloadImage = async (url, filePath) => {
+  const response = await axios({
+    url,
+    responseType: 'stream',
+  });
+  return new Promise((resolve, reject) => {
+    const writer = fs.createWriteStream(filePath);
+    response.data.pipe(writer);
+    writer.on('finish', resolve);
+    writer.on('error', reject);
+  });
 };
 
 // Event schema
@@ -91,7 +125,7 @@ const eventSchema = new mongoose.Schema({
   Address: String,
   tags: [String], // Add tags array field
   faculty: [String], // Add faculty array field
-  degree_level: [String] // Add degree level array field
+  degree_level: [String], // Add degree level array field
 });
 
 // Add an index on the event_date and start_time fields for efficient querying and sorting
@@ -131,7 +165,7 @@ const newsSchema = new mongoose.Schema({
   title: String,
   content: String,
   date: String, // Field to store the date as a string in "YYYY-MM-DD" format
-  created_at: { type: Date, default: Date.now }
+  created_at: { type: Date, default: Date.now },
 });
 
 const News = mongoose.model('News', newsSchema, 'news');
@@ -195,8 +229,8 @@ app.post('/add-event', upload.single('image'), async (req, res) => {
       tags: JSON.parse(tags), // Parse tags back to array
       faculty: JSON.parse(faculty), // Parse faculty back to array
       degree_level: JSON.parse(degree_level), // Parse degree level back to array
-      latitude: latitude && latitude !== "null" ? parseFloat(latitude) : null,
-      longitude: longitude && longitude !== "null" ? parseFloat(longitude) : null,
+      latitude: latitude && latitude !== 'null' ? parseFloat(latitude) : null,
+      longitude: longitude && longitude !== 'null' ? parseFloat(longitude) : null,
     });
 
     await newEvent.save();
@@ -321,63 +355,100 @@ app.get('/news', async (req, res) => {
 // Serve static files from the uploads directory
 app.use('/uploads', express.static('uploads'));
 
+// Faculty and Academic Schema and Route
+const facultyAcademicSchema = new mongoose.Schema({
+  title: String,
+  faculty: String,
+  image_link: String,
+  account_link: String,
+  points: String,
+});
+
+const FacultyAcademic = mongoose.model('FacultyAcademic', facultyAcademicSchema, 'faculty-academic');
+
+// Route to get clubs and organizations based on faculty
+app.get('/clubs-organizations', async (req, res) => {
+  const faculty = req.query.faculty; // Get faculty from query params
+
+  try {
+    let clubsOrganizations;
+
+    if (faculty) {
+      // Query Faculty & Academic collection by faculty
+      clubsOrganizations = await FacultyAcademic.find({ faculty }).sort({ title: 1 });
+    } else {
+      // If no faculty is specified, return all clubs from the default collection
+      clubsOrganizations = await FacultyAcademic.find().sort({ title: 1 });
+    }
+
+    // Download and upload Instagram images to S3/CloudFront
+    for (const club of clubsOrganizations) {
+      const imageUrl = club.image_link;
+      if (imageUrl.includes('instagram')) {
+        // Generate a unique file name for the image
+        const fileName = `${club._id}-${crypto.createHash('md5').update(imageUrl).digest('hex')}.jpg`;
+
+        // Check if the image already exists in S3
+        const existsInS3 = await checkIfImageExistsInS3(fileName);
+
+        if (!existsInS3) {
+          const imagePath = path.join(__dirname, 'uploads', fileName);
+
+          // Download the image from Instagram
+          await downloadImage(imageUrl, imagePath);
+
+          // Upload the image to S3 and get the CloudFront URL
+          const cloudFrontUrl = await uploadFileToS3(imagePath, fileName);
+
+          // Delete the image from local storage after uploading
+          fs.unlinkSync(imagePath);
+
+          // Update the image link to point to CloudFront
+          club.image_link = cloudFrontUrl;
+        } else {
+          // If the image already exists in S3, just generate the CloudFront URL
+          club.image_link = `https://${cloudFrontDomain}/${fileName}`;
+        }
+      }
+    }
+
+    res.json(clubsOrganizations);
+  } catch (error) {
+    console.error('Error fetching clubs/organizations:', error);
+    res.status(500).json({ error: 'Error fetching clubs/organizations' });
+  }
+});
+
+// Route to get a specific event by ID
+app.get('/event/:eventId', async (req, res) => {
+  const { eventId } = req.params;
+
+  try {
+    // Convert eventId to ObjectId
+    const objectId = new ObjectId(eventId);
+
+    // Log the date and ObjectId for debugging
+    const date = dayjs().format('YYYY-MM-DD');
+    console.log(`Fetching event with ID: ${eventId} as ObjectId: ${objectId} for date: ${date}`);
+
+    const EventModel = getEventModel(date);
+
+    // Query MongoDB using ObjectId
+    const event = await EventModel.findById(objectId);
+    console.log(`MongoDB Query Result:`, event);
+
+    if (!event) {
+      return res.status(404).json({ message: 'Event not found' });
+    }
+
+    res.json(event);
+  } catch (err) {
+    console.error(`Error fetching event with ID ${eventId}:`, err);
+    res.status(500).json({ message: 'Error fetching event', error: err.message });
+  }
+});
+
 // Start the server
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
-
-// Clubs and Organizations Schema and Routes
-const clubsOrganizationsSchema = new mongoose.Schema({
-  name: String, // Name of the club/organization
-  image: String, // Image URL
-});
-
-const ClubOrganization = mongoose.model('ClubOrganization', clubsOrganizationsSchema, 'clubs-organizations');
-
-// Route to get all clubs and organizations
-app.get('/clubs-organizations', async (req, res) => {
-  try {
-    const clubsOrganizations = await ClubOrganization.find().sort({ name: 1 }); // Sort by name
-    res.json(clubsOrganizations);
-  } catch (error) {
-    console.error('Error fetching clubs/organizations:', error);
-    res.status(500).json({ error: 'Error fetching clubs/organizations' });
-  }
-});
-
-// Route to get popular events based on the sponsored events for a specific date
-app.get('/popular_events', async (req, res) => {
-  const date = req.query.date || dayjs().format('YYYY-MM-DD');
-
-  try {
-      const sponsoredEvents = await SponsoredEvent.find({ event_date: date }).exec();
-      const eventTitles = sponsoredEvents.map(event => event.event_title);
-      
-      const EventModel = getEventModel(date);
-      const popularEvents = await EventModel.find({ event_title: { $in: eventTitles } }).exec();
-
-      res.json(popularEvents);
-  } catch (err) {
-      console.error('Error fetching popular events:', err);
-      res.status(500).json({ message: 'Error fetching popular events', error: err.message });
-  }
-});
-
-
-// Route to get all clubs and organizations from the 'Faculty&Academic' collection and filter by faculty if needed
-app.get('/clubs-organizations', async (req, res) => {
-  try {
-    const faculty = req.query.faculty;
-    const query = faculty && faculty !== 'All' ? { faculty } : {};
-
-    // Query the 'Faculty&Academic' collection
-    const ClubOrganization = mongoose.model('ClubOrganization', new mongoose.Schema({}, { strict: false }), 'Faculty&Academic');
-    const clubsOrganizations = await ClubOrganization.find(query).sort({ title: 1 }); // Sort by title
-
-    res.json(clubsOrganizations);
-  } catch (error) {
-    console.error('Error fetching clubs/organizations:', error);
-    res.status(500).json({ error: 'Error fetching clubs/organizations' });
-  }
-});
-
